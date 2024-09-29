@@ -5,9 +5,12 @@
     <meta charset="UTF-8">
     <title>Audio Recorder</title>
     <style>
-        #sendButton, #sttButton {
+        #sendButton, #sttButton, #repliesContainer {
             display: none;
             margin-left: 10px;
+        }
+        #repliesContainer button {
+            margin: 5px;
         }
     </style>
 </head>
@@ -19,12 +22,19 @@
     <button id="sttButton">STT</button> <!-- STT Button -->
     <p id="status">Click "Record" to start.</p>
 
+    <!-- Container for dynamic reply buttons -->
+    <div id="repliesContainer"></div>
+
+    <!-- Hidden audio element for replies -->
+    <audio id="replyAudio" src="" preload="auto"></audio>
+
     <script>
         let recordButton = document.getElementById('recordButton');
         let stopButton = document.getElementById('stopButton');
         let sendButton = document.getElementById('sendButton');
         let sttButton = document.getElementById('sttButton'); // STT Button Element
         let status = document.getElementById('status');
+        let repliesContainer = document.getElementById('repliesContainer'); // Replies Container
         let mediaRecorder;
         let chunks = [];
         let currentFilename = ''; // To store the current audio filename
@@ -44,6 +54,7 @@
                     stopButton.disabled = false;
                     sendButton.style.display = 'none';
                     sttButton.style.display = 'none'; // Hide STT button during recording
+                    repliesContainer.style.display = 'none'; // Hide replies during recording
                     chunks = []; // Clear previous chunks
 
                     mediaRecorder.ondataavailable = function(e) {
@@ -124,9 +135,10 @@
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    // Toggle the following line to enable/disable message display
-                    displayTranscription(data.transcription); // Display the transcription
-                    // status.textContent = data.message; // Alternative: use status message
+                    // Display the transcription
+                    displayTranscription(data.transcription);
+                    // Handle replies
+                    handleReplies(data.replies);
                 } else {
                     status.textContent = 'Error: ' + data.message;
                 }
@@ -138,10 +150,39 @@
         }
 
         function displayTranscription(transcription) {
-            // Toggle the following block to enable/disable message display
-            alert(`Transcription:\n${transcription}`);
-            // Alternatively, display in the status paragraph
-            // status.textContent = `Transcription: ${transcription}`;
+            // Display the transcription in the status paragraph
+            status.textContent = `Transcription: ${transcription}`;
+        }
+
+        function handleReplies(replies) {
+            // Clear any existing reply buttons
+            repliesContainer.innerHTML = '';
+
+            if (replies.length > 0) {
+                repliesContainer.style.display = 'block';
+                replies.forEach(replyFile => {
+                    let button = document.createElement('button');
+                    button.textContent = `Play "${getKeywordFromReply(replyFile)}" Reply`;
+                    button.addEventListener('click', () => {
+                        playReply(replyFile);
+                    });
+                    repliesContainer.appendChild(button);
+                });
+            } else {
+                repliesContainer.style.display = 'none';
+            }
+        }
+
+        function getKeywordFromReply(replyFile) {
+            // Extract the keyword from the reply filename, e.g., 'reply_hello.mp3' -> 'hello'
+            return replyFile.replace('reply_', '').replace('.mp3', '');
+        }
+
+        function playReply(replyFile) {
+            const replyAudio = document.getElementById('replyAudio');
+            replyAudio.src = `/recordings/${replyFile}`;
+            replyAudio.play();
+            status.textContent = `Playing reply: ${getKeywordFromReply(replyFile)}`;
         }
     </script>
 </body>
