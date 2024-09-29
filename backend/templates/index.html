@@ -1,0 +1,148 @@
+<!-- backend/templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Recorder</title>
+    <style>
+        #sendButton, #sttButton {
+            display: none;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audio Recorder</h1>
+    <button id="recordButton">Record</button>
+    <button id="stopButton" disabled>Stop</button>
+    <button id="sendButton">Send</button>
+    <button id="sttButton">STT</button> <!-- STT Button -->
+    <p id="status">Click "Record" to start.</p>
+
+    <script>
+        let recordButton = document.getElementById('recordButton');
+        let stopButton = document.getElementById('stopButton');
+        let sendButton = document.getElementById('sendButton');
+        let sttButton = document.getElementById('sttButton'); // STT Button Element
+        let status = document.getElementById('status');
+        let mediaRecorder;
+        let chunks = [];
+        let currentFilename = ''; // To store the current audio filename
+
+        recordButton.addEventListener('click', startRecording);
+        stopButton.addEventListener('click', stopRecording);
+        sendButton.addEventListener('click', sendAudio);
+        sttButton.addEventListener('click', convertSTT); // STT Button Event Listener
+
+        function startRecording() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.start();
+                    status.textContent = 'Recording...';
+                    recordButton.disabled = true;
+                    stopButton.disabled = false;
+                    sendButton.style.display = 'none';
+                    sttButton.style.display = 'none'; // Hide STT button during recording
+                    chunks = []; // Clear previous chunks
+
+                    mediaRecorder.ondataavailable = function(e) {
+                        if (e.data.size > 0) {
+                            chunks.push(e.data);
+                        }
+                    }
+
+                    mediaRecorder.onstop = function() {
+                        // Generate a timestamped filename
+                        let timestamp = new Date().toISOString().replace(/[:.]/g, '_');
+                        currentFilename = `audio_${timestamp}.webm`;
+                        // Display readiness to send or transcribe
+                        sendButton.style.display = 'inline';
+                        sttButton.style.display = 'inline'; // Show STT button after recording
+                        status.textContent = 'Recording stopped. Ready to send or transcribe.';
+                    }
+                })
+                .catch(err => {
+                    console.error('Error accessing microphone:', err);
+                    status.textContent = 'Error accessing microphone: ' + err;
+                });
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            recordButton.disabled = false;
+            stopButton.disabled = true;
+        }
+
+        function sendAudio() {
+            if (chunks.length === 0) {
+                status.textContent = 'No audio recorded.';
+                return;
+            }
+
+            let blob = new Blob(chunks, { 'type' : 'audio/webm; codecs=opus' });
+            let fd = new FormData();
+            fd.append('audio_data', blob, currentFilename); // Use the generated filename
+
+            fetch('/process_audio', {
+                method: 'POST',
+                body: fd
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    status.textContent = data.message;
+                    currentFilename = data.filename; // Update currentFilename with server's filename
+                } else {
+                    status.textContent = 'Error: ' + data.message;
+                }
+                // Clear chunks after sending
+                chunks = [];
+                // Do not hide the STT button to keep it accessible
+                sendButton.style.display = 'none';
+                // sttButton.style.display = 'none'; // Removed to keep STT button visible
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                status.textContent = 'An error occurred while sending the audio.';
+            });
+        }
+
+        function convertSTT() {
+            if (currentFilename === '') {
+                status.textContent = 'No audio file available for transcription.';
+                return;
+            }
+
+            fetch('/convert_stt', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ filename: currentFilename })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Toggle the following line to enable/disable message display
+                    displayTranscription(data.transcription); // Display the transcription
+                    // status.textContent = data.message; // Alternative: use status message
+                } else {
+                    status.textContent = 'Error: ' + data.message;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                status.textContent = 'An error occurred while converting audio to text.';
+            });
+        }
+
+        function displayTranscription(transcription) {
+            // Toggle the following block to enable/disable message display
+            alert(`Transcription:\n${transcription}`);
+            // Alternatively, display in the status paragraph
+            // status.textContent = `Transcription: ${transcription}`;
+        }
+    </script>
+</body>
+</html>
